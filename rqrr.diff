@@ -1,0 +1,133 @@
+diff --git a/src/decode.rs b/src/decode.rs
+index 2cfc348..3f80557 100644
+--- a/src/decode.rs
++++ b/src/decode.rs
+@@ -110,10 +110,20 @@ pub fn decode<W>(code: &dyn BitGrid, writer: W) -> DeQRResult<MetaData>
+ where
+     W: Write,
+ {
+-    let meta = read_format(code)?;
++    decode0(code, writer, 8)
++}
++pub fn decode0<W>(code: &dyn BitGrid, writer: W, mask: u16) -> DeQRResult<MetaData>
++where
++    W: Write,
++{
++    let meta = read_format0(code, mask)?;
++    println!("_x_[XXX]_x_ hhhhhhhhhh");
+     let raw = read_data(code, &meta, true);
++    println!("_x_[XXX]_x_ iiiiiiiiii");
+     let stream = codestream_ecc(&meta, raw)?;
++    println!("_x_[XXX]_x_ jjjjjjjjjj");
+     decode_payload(&meta, stream, writer)?;
++    println!("_x_[XXX]_x_ qqqqqqqqqq");
+ 
+     Ok(meta)
+ }
+@@ -131,15 +141,23 @@ where
+ {
+     while ds.bits_remaining() >= 4 {
+         let ty = ds.take_bits(4);
+-        match ty {
++        // let ty: usize = 2;
++        let r = match ty {
+             0 => break,
+             1 => decode_numeric(meta, &mut ds, &mut writer),
+             2 => decode_alpha(meta, &mut ds, &mut writer),
+             4 => decode_byte(meta, &mut ds, &mut writer),
+             8 => decode_kanji(meta, &mut ds, &mut writer),
+             7 => decode_eci(meta, &mut ds, &mut writer),
+-            _ => Err(DeQRError::UnknownDataType)?,
+-        }?;
++            _ => {
++                decode_byte(meta, &mut ds, &mut writer)
++                // Err(DeQRError::UnknownDataType)?
++                // eprintln!("Unknown data type: {}", ty);
++            }
++        };
++        if let Some(err) = r.err() {
++            eprintln!("Error decoding data: {:?}", err);
++        }
+     }
+     Ok(())
+ }
+@@ -323,11 +341,13 @@ fn numeric_tuple(
+ }
+ 
+ fn codestream_ecc(meta: &MetaData, ds: RawData) -> DeQRResult<CorrectedDataStream> {
++    println!("_x_[XXX]_x_ kkkkkkkkkk");
+     let mut out = CorrectedDataStream {
+         data: [0; MAX_PAYLOAD_SIZE],
+         ptr: 0,
+         bit_len: 0,
+     };
++    println!("_x_[XXX]_x_ llllllllll");
+ 
+     let ver = &VERSION_DATA_BASE[meta.version.0];
+     let sb_ecc = &ver.ecc[meta.ecc_level as usize];
+@@ -336,11 +356,13 @@ fn codestream_ecc(meta: &MetaData, ds: RawData) -> DeQRResult<CorrectedDataStrea
+         dw: sb_ecc.dw + 1,
+         ns: sb_ecc.ns,
+     };
++    println!("_x_[XXX]_x_ mmmmmmmmmm");
+ 
+     let lb_count = (ver.data_bytes - sb_ecc.bs * sb_ecc.ns) / (sb_ecc.bs + 1);
+     let bc = lb_count + sb_ecc.ns;
+     let ecc_offset = sb_ecc.dw * bc + lb_count;
+ 
++    println!("_x_[XXX]_x_ oooooooooo");
+     let mut dst_offset = 0;
+     for i in 0..bc {
+         let ecc = if i < sb_ecc.ns { sb_ecc } else { &lb_ecc };
+@@ -353,10 +375,13 @@ fn codestream_ecc(meta: &MetaData, ds: RawData) -> DeQRResult<CorrectedDataStrea
+         for j in 0..num_ec {
+             dst[ecc.dw + j] = ds.data[ecc_offset + j * bc + i];
+         }
+-        correct_block(dst, ecc)?;
++        if let Some(DeQRError::DataEcc) = correct_block(dst, ecc).err() {
++            println!("Error in block {}: {:?}", i, ecc);
++        }
+ 
+         dst_offset += ecc.dw;
+     }
++    println!("_x_[XXX]_x_ nnnnnnnnnn");
+ 
+     out.bit_len = dst_offset * 8;
+     Ok(out)
+@@ -675,6 +700,17 @@ fn correct_format(mut word: u16) -> DeQRResult<u16> {
+ }
+ 
+ fn read_format(code: &dyn BitGrid) -> DeQRResult<MetaData> {
++    read_format0(code, 8)
++}
++fn read_format0(code: &dyn BitGrid, mask: u16) -> DeQRResult<MetaData> {
++    if 1 == 1 {
++        // dbg!(Version::from_size(code.size()));
++        return Ok(MetaData {
++            version: Version::from_size(code.size())?,
++            ecc_level: 0,
++            mask,
++        });
++    }
+     let mut format = 0;
+ 
+     // Try first location
+@@ -684,6 +720,8 @@ fn read_format(code: &dyn BitGrid) -> DeQRResult<MetaData> {
+         format = (format << 1) | code.bit(YS[i], XS[i]) as u16;
+     }
+     format ^= 0x5412;
++    println!("{}", format);
++    println!("{:08b}", format);
+ 
+     // Check format, try other location if needed
+     let verified_format = correct_format(format).or_else(|_| {
+diff --git a/src/lib.rs b/src/lib.rs
+index d558073..23f9ef2 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -686,3 +686,5 @@ mod tests {
+         assert_eq!(b"1234567891011121314151617181920".as_ref(), &vec[..])
+     }
+ }
++
++pub mod exp;

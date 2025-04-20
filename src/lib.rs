@@ -686,3 +686,5 @@ mod tests {
         assert_eq!(b"1234567891011121314151617181920".as_ref(), &vec[..])
     }
 }
+
+pub mod exp;
